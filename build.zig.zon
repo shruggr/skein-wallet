@@ -1,0 +1,21 @@
+.{
+    .name = .skein_wallet,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .fingerprint = 0x41ac64b7a4925008,
+    .dependencies = .{
+        .skein_sdk = .{
+            .url = "https://github.com/shruggr/skein-sdk/archive/refs/tags/v0.19.0.tar.gz",
+            .hash = "skein_sdk-0.19.0-YroFBGTHGwBg3a3_XJwQFuV1BUoRtUi9o3W8F_nuhj8R",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "test.zig",
+        "bin",
+        "etc",
+        "README.md",
+    },
+}

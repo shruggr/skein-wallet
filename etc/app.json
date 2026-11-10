@@ -1,0 +1,60 @@
+{
+  "kind": "app",
+  "name": "wallet",
+  "version": "0.1.0",
+  "programs": {
+    "wallet": "bin/wallet.wasm"
+  },
+  "config": {
+    "wallet": {
+      "chain": "chain"
+    }
+  },
+  "provides": [
+    {
+      "interface": "wallet/1",
+      "functions": {
+        "file": {
+          "writes": true,
+          "args": {
+            "outpoint": "string",
+            "protocol": "any",
+            "keyID": "string",
+            "counterparty": "string"
+          },
+          "answer": {
+            "outpoint": "string",
+            "basket": "string",
+            "satoshis": "int",
+            "state": "string",
+            "filed": "bool"
+          }
+        }
+      }
+    }
+  ],
+  "requires": [
+    "chain/1"
+  ],
+  "filters": {
+    "outputs": "wallet.outputs",
+    "balance": "wallet.balance"
+  },
+  "routes": [
+    {
+      "transport": "http",
+      "address": "/outputs",
+      "filters": [
+        "outputs"
+      ]
+    },
+    {
+      "transport": "http",
+      "address": "/balance",
+      "filters": [
+        "balance"
+      ]
+    }
+  ],
+  "description": "The wallet (shruggr/skein-wallet): the record keeper of every output the instance owns, BSV and token outputs alike (it knows nothing about tokens). One record per output: its outpoint, its key derivation {protocol: [level, name], keyID, counterparty}, its basket, its satoshis, its state (unspent | spent, with the spender | void: the paying transaction rejected). The basket is the name the kernel checked on the call: another app files an output in its own step with the named call callAs(<this program>, \"file\", \"<basket>\", {outpoint: \"<txid>.<vout>\", protocol, keyID, counterparty}) — its manifest declares calls {wallet: [\"<basket>\"]}, root approves it at install; a call without a name is refused. The transaction must be one the chain state holds (the caller ingests it at the chain app first, in the same step). Idempotent on the outpoint; the claim is not checked against the script (the basket permission is the whole safeguard). The state is read from the chain app's facts, chain/tx/<txid> and chain/output/<txid>.<vout>, at filing and on every later fact (the wallet subscribes to both); the satoshi tally per basket counts the unspent outputs only. Reads, open, nothing logged: GET /wallet/outputs?basket=&after=<txid>.<vout>&limit= (the basket's unspent outputs with their derivations, {basket, outputs, next}) and GET /wallet/balance?basket= ({basket, satoshis}). The wallet never builds or signs a transaction, has no spend route and emits nothing about coins."
+}
