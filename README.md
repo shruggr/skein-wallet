@@ -1,6 +1,6 @@
 # skein-wallet
 
-The wallet, a skein app (name `wallet`, 0.1.0). It keeps the record of every output an instance owns:
+The wallet, a skein app (name `wallet`, 0.1.1). It keeps the record of every output an instance owns:
 BSV outputs and token outputs alike. It knows nothing about tokens. It never builds or signs a
 transaction. It has no spend route and no "mark spent" call, and it emits no events about coins: its
 records are its own state, under the head `wallet/book`.

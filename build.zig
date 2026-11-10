@@ -10,7 +10,7 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const wasi = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .wasi });
     // The app's installed name (its heads are `<app>/…`): `wallet`. A test build may name another while
-    // skein still reserves `wallet` (its genesis-wired wallet program); bin/wallet.wasm is always `wallet`.
+    // skein before 0.7.0 reserved `wallet` (its genesis-wired wallet program); bin/wallet.wasm is always `wallet`.
     const app_name = b.option([]const u8, "app", "the app's installed name (default wallet)") orelse "wallet";
     const opts = b.addOptions();
     opts.addOption([]const u8, "app", app_name);
