@@ -21,15 +21,18 @@ const std = @import("std");
 const c = @import("chain");
 const vm = @import("vm.zig");
 const book = @import("book.zig");
+const sk = @import("sk");
+const options = @import("build_options");
 
 const cbor = c.cbor;
 const Value = cbor.Value;
 const Allocator = std.mem.Allocator;
 const eql = std.mem.eql;
 
-pub const NAME = "wallet";
+/// The app's installed name: `wallet` (build option `app`, for a test build while skein reserves the name).
+pub const NAME = options.app;
 /// The wallet's one head: its book's record.
-pub const BOOK_HEAD = "wallet/book";
+pub const BOOK_HEAD = NAME ++ "/book";
 pub const DEFAULT_CHAIN = "chain";
 pub const MAX_LIMIT = 1000;
 pub const DEFAULT_LIMIT = 100;
@@ -87,6 +90,14 @@ fn chainName(a: Allocator) ![]const u8 {
 
 // ---------------------------------------------------------------- file
 
+pub const NO_NAME = "file: a call without a name files nothing (the name the kernel checked is the basket: callAs)";
+
+/// The basket a filing call is made in: the name the kernel checked (the call input's `as`,
+/// skein-sdk `sk.asName`); null when the call stated none (refused).
+pub fn basketOf(in: sk.Value) ?[]const u8 {
+    return sk.asName(in);
+}
+
 pub const FileArgs = struct { txid: [32]u8, vout: u32, d: book.Derivation };
 
 /// The `file` arg, checked; else why not.
@@ -103,7 +114,7 @@ pub fn parseFileArgs(arg: Value) union(enum) { ok: FileArgs, bad: []const u8 } {
 }
 
 fn fileCall(a: Allocator, in: Value, chain: []const u8) !void {
-    const basket = in.getText("as") orelse return vm.refuse("file: a call without a name files nothing (the name the kernel checked is the basket: callAs)");
+    const basket = basketOf(try sk.input(a)) orelse return vm.refuse(NO_NAME);
     const arg = cbor.decode(a, in.getBytes("arg") orelse "") catch return vm.refuse("file: the argument is not dag-cbor");
     const fa = switch (parseFileArgs(arg)) {
         .ok => |x| x,

@@ -259,3 +259,11 @@ test "the file arg" {
     try testing.expect(book.parseOutpoint("zz.1") == null);
     try testing.expectEqualStrings("a b", (try main.queryParam(a, "?basket=a%20b&x=1", "basket")).?);
 }
+
+test "the basket is the call input's `as` (sk.asName); a call without it has none (refused)" {
+    const sk = @import("sk");
+    const named: sk.Value = .{ .map = &.{ .{ .key = "kind", .value = .{ .string = "call" } }, .{ .key = "fn", .value = .{ .string = "file" } }, .{ .key = "as", .value = .{ .string = "bsv" } } } };
+    try testing.expectEqualStrings("bsv", main.basketOf(named).?);
+    const plain: sk.Value = .{ .map = &.{ .{ .key = "kind", .value = .{ .string = "call" } }, .{ .key = "fn", .value = .{ .string = "file" } } } };
+    try testing.expect(main.basketOf(plain) == null);
+}

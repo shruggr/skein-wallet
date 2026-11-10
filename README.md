@@ -97,17 +97,36 @@ These are read routes: filters with no handler and no `kernel.brc104`.
 ## Build
 
 ```
-zig build        → zig-out/bin/wallet.wasm
-zig build bin    bin/wallet.wasm (committed)
-zig build test   the book, natively
+zig build                  → zig-out/bin/wallet.wasm
+zig build bin              bin/wallet.wasm (committed)
+zig build test             the book and the call's pure parts, natively
+zig build -Dapp=<name>     the same code installed under another name (its heads <name>/…)
 ```
 
-It depends on skein-sdk v0.19.0 (`chain`), and is built the way skein-chain 0.10.0 is built. Its
-skein imports are input, get, put, putblock, keep, head, advance, take, error, edges, on and events.
+- It depends on skein-sdk 0.20.0, pinned by commit 39e3602 (`chain`, and `sk` for `sk.asName`). It is
+  built the way skein-chain 0.10.0 is built.
+- Its skein imports are input, get, put, putblock, keep, head, advance, take, error, edges, on and
+  events.
+- `-Dapp` is for tests only, while skein reserves the name `wallet`. `bin/wallet.wasm` is always
+  `wallet`.
+
+## End to end (test/e2e.ts)
+
+It needs a skein checkout with the call permissions and its kernel built, skein-chain 0.10.0, and the
+module built as `walletx`:
+
+```
+zig build -Dapp=walletx -p /tmp/walletx
+SKEIN_DIR=<skein checkout> SKEIN_CHAIN_DIR=<skein-chain at v0.10.0> \
+WALLET_WASM=/tmp/walletx/bin/wallet.wasm [SKEIN_EQUIV_STORE=rocksdb] \
+  node --experimental-strip-types --no-warnings test/e2e.ts
+```
 
 ## Needs from skein (not in skein yet)
 
-- **The named call** (`callAs` and `as` in the call input; branch `call-permissions`).
-- **Freeing the name `wallet`:** skein's own genesis wallet program and the reserved name must go
-  first. Until then, skein's manifest check refuses the name `wallet`.
-- **The chain app's `chain/output` facts** (skein-chain 0.10.0, branch `chain-statuses`).
+- **The named call** (`callAs` and `as` in the call input): skein branch `call-permissions`, run end to
+  end at 6c699aa.
+- **Freeing the name `wallet`:** skein's manifest check refuses it (src/host/manifest.ts
+  `RESERVED_NAMES`, line 121 on that branch, checked at line 272). It stays refused until the genesis
+  wallet program and the reserved name are removed.
+- **The chain app's `chain/output` facts:** skein-chain 0.10.0.
