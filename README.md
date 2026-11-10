@@ -103,30 +103,28 @@ zig build test             the book and the call's pure parts, natively
 zig build -Dapp=<name>     the same code installed under another name (its heads <name>/…)
 ```
 
-- It depends on skein-sdk 0.20.0, pinned by commit 39e3602 (`chain`, and `sk` for `sk.asName`). It is
-  built the way skein-chain 0.10.0 is built.
+- It depends on skein-sdk v0.21.0, pinned by tag (`chain`, and `sk` for `sk.asName`). It is built
+  the way skein-chain is built.
 - Its skein imports are input, get, put, putblock, keep, head, advance, take, error, edges, on and
   events.
-- `-Dapp` is for tests only, while skein reserves the name `wallet`. `bin/wallet.wasm` is always
-  `wallet`.
+- `-Dapp` is for tests only (skein before 0.7.0 reserved the name `wallet`). `bin/wallet.wasm` is
+  always `wallet`.
 
 ## End to end (test/e2e.ts)
 
-It needs a skein checkout with the call permissions and its kernel built, skein-chain 0.10.0, and the
-module built as `walletx`:
+It needs a skein checkout at v0.7.0 with its kernel built and `npm ci` run, and skein-chain v0.11.0.
+The app is installed as `wallet`:
 
 ```
-zig build -Dapp=walletx -p /tmp/walletx
-SKEIN_DIR=<skein checkout> SKEIN_CHAIN_DIR=<skein-chain at v0.10.0> \
-WALLET_WASM=/tmp/walletx/bin/wallet.wasm [SKEIN_EQUIV_STORE=rocksdb] \
+SKEIN_DIR=<skein at v0.7.0> SKEIN_CHAIN_DIR=<skein-chain at v0.11.0> \
+WALLET_WASM=bin/wallet.wasm [SKEIN_EQUIV_STORE=rocksdb] \
   node --experimental-strip-types --no-warnings test/e2e.ts
 ```
 
-## Needs from skein (not in skein yet)
+`WALLET_APP=<name>`, with a module built as `-Dapp=<name>`, installs it under another name.
 
-- **The named call** (`callAs` and `as` in the call input): skein branch `call-permissions`, run end to
-  end at 6c699aa.
-- **Freeing the name `wallet`:** skein's manifest check refuses it (src/host/manifest.ts
-  `RESERVED_NAMES`, line 121 on that branch, checked at line 272). It stays refused until the genesis
-  wallet program and the reserved name are removed.
-- **The chain app's `chain/output` facts:** skein-chain 0.10.0.
+## Needs from skein
+
+- **The named call** (`callAs` and `as` in the call input): skein 0.7.0.
+- **The name `wallet`:** free since skein 0.7.0.
+- **The chain app's `chain/tx` and `chain/output` facts:** skein-chain 0.11.0.

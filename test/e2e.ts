@@ -1,5 +1,5 @@
-// The wallet app end to end on a real kernel (skein with call permissions, branch `call-permissions`)
-// and the chain app (skein-chain 0.10.0). One instance `w` on a test host with a fake Arcade and a
+// The wallet app end to end on a real kernel (skein 0.7.0: call permissions) and the chain app
+// (skein-chain 0.11.0). One instance `w` on a test host with a fake Arcade and a
 // regtest header chain:
 //
 //   - the chain app, the wallet app and a probe app (skein's programs/test/perm-probe) installed by
@@ -15,11 +15,17 @@
 //   - a filed output whose PAYING transaction is then rejected: void, out of the tally;
 //   - the store replays to itself exactly.
 //
-//   SKEIN_DIR=<a skein checkout at call-permissions, kernel built>  WALLET_WASM=<wallet.wasm built with -Dapp=walletx>
-//   SKEIN_CHAIN_DIR=<skein-chain at v0.10.0>  node --experimental-strip-types --no-warnings test/e2e.ts
+//   SKEIN_DIR=<a skein checkout at v0.7.0, kernel built, npm ci>  WALLET_WASM=bin/wallet.wasm
+//   SKEIN_CHAIN_DIR=<skein-chain at v0.11.0>  node --experimental-strip-types --no-warnings test/e2e.ts
 //
-// The app is installed as `walletx`: skein still reserves the name `wallet` (its genesis-wired wallet
-// program, src/host/manifest.ts RESERVED_NAMES). The module is the same code built with -Dapp=walletx.
+// The app is installed as `wallet` (skein 0.7.0: the name is free). WALLET_APP=<name> installs it under
+// another name, for a module built with -Dapp=<name> (skein before 0.7.0 reserved `wallet`).
+//
+// 0.1.1 (skein-chain 0.11.0): two more sequences, no terminal void —
+//   - a filed output whose payer is rejected, then MINED (a proof overrides the rejection): void, then
+//     unspent again, the tally back;
+//   - a filed output of a child whose parent is rejected (input-rejected), then the parent mined: the
+//     child REVIVED (pending again) → unspent again, the tally back.
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -34,7 +40,7 @@ const SKEIN = process.env.SKEIN_DIR ?? "";
 const CHAIN_DIR = process.env.SKEIN_CHAIN_DIR ?? "";
 const WALLET_WASM = process.env.WALLET_WASM ?? "";
 if (!SKEIN || !CHAIN_DIR || !WALLET_WASM) throw new Error("set SKEIN_DIR, SKEIN_CHAIN_DIR and WALLET_WASM");
-const APP = "walletx";
+const APP = process.env.WALLET_APP ?? "wallet";
 const req = createRequire(join(SKEIN, "package.json"));
 const imp = async <T>(p: string): Promise<T> => await import(pathToFileURL(join(SKEIN, p)).href) as T;
 /** A package's ESM entry as skein's own modules import it (its exports' `import`), so the classes are the same. */
@@ -58,6 +64,7 @@ const check = (ok: boolean, what: string) => { process.stdout.write(`${ok ? "ok 
 // ---------------------------------------------------------------- regtest (as skein's equiv/chain.ts)
 const sha256d = (b: Uint8Array) => createHash("sha256").update(createHash("sha256").update(b).digest()).digest();
 const internal = (displayHex: string) => Buffer.from(displayHex, "hex").reverse();
+const display = (h: Uint8Array) => Buffer.from(h).reverse().toString("hex");
 const REGTEST_GENESIS = Buffer.from("0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4adae5494dffff7f2002000000", "hex");
 const TARGET = 0x7fffffn << BigInt(8 * (0x20 - 3));
 function mine(prev: Uint8Array, merkleRoot: Uint8Array, time: number): Uint8Array {
@@ -119,7 +126,7 @@ try {
   };
 
   // ------------------------------------------------ install
-  for (const [what, dir] of [["skein-chain 0.10.0", CHAIN_DIR], [`the wallet (as ${APP})`, walletTree()], ["the probe pa", probeTree("pa", { [APP]: ["bsv"] })]] as const) {
+  for (const [what, dir] of [["the chain app", CHAIN_DIR], [`the wallet (as ${APP})`, walletTree()], ["the probe pa", probeTree("pa", { [APP]: ["bsv"] })]] as const) {
     const o = await cli("install", dir, "--instance", "w");
     check(o.code === 0, `install ${what}: exit ${o.code} ${o.err.join(" ")}`);
     if (what === "the probe pa") check(o.out.some((l) => new RegExp(`grant\\s+calls ${APP} as "bsv"`).test(l)), `the install prompt reads pa's call aloud (${o.out.filter((l) => /grant/.test(l)).join(" | ")})`);
@@ -217,6 +224,51 @@ try {
   check(await until("void", async () => { await h.router.settled(); return (await reads()).balance === 10_000 || undefined; }, 20_000).then(() => true, () => false), `the payer rejected (chain/tx ${await txStatuses(payTxid)}): void, the tally 10000`);
   v = await reads();
   check(v.outputs.length === 1 && v.outputs[0]!.outpoint === op0, `void: off /outputs (${v.list})`);
+  // ------------------------------------------------ 0.1.1: rejected → void → mined → unspent again
+  const pay2 = new Transaction();
+  pay2.addInput({ sourceTransaction: fund, sourceOutputIndex: 2, unlockingScriptTemplate: new P2PKH().unlock(alice), sequence: 0xffffffff });
+  pay2.addOutput({ lockingScript: new P2PKH().lock(alice.toPublicKey().toHash()), satoshis: 4_000 });
+  pay2.addOutput({ lockingScript: new P2PKH().lock(alice.toPublicKey().toHash()), satoshis: 5_000 });
+  await pay2.sign();
+  const pay2Txid = pay2.id("hex");
+  await ingest(pay2);
+  r = await call("file", fileArg(pay2Txid, 0), "bsv");
+  check(r.ok && r.ans.state === "unspent" && (await reads()).balance === 14_000, `pay2's output filed: unspent, the tally 14000 (${JSON.stringify(r.ans)})`);
+  arcade.emit(pay2Txid, { txStatus: "REJECTED" });
+  check(await until("pay2 void", async () => { await h.router.settled(); return (await reads()).balance === 10_000 || undefined; }, 20_000).then(() => true, () => false), `pay2 rejected (chain/tx ${await txStatuses(pay2Txid)}): void, the tally 10000`);
+  const h2 = mine(sha256d(h1), internal(pay2Txid), 1_790_200_600);
+  await h.router.chainHeaders("w", "chain", [h2]);
+  await h.router.settled();
+  arcade.emit(pay2Txid, { txStatus: "MINED", blockHash: display(sha256d(h2)), blockHeight: 2, merklePath: new MerklePath(2, [[{ offset: 0, hash: pay2Txid, txid: true }]]).toHex() });
+  check(await until("pay2 mined", async () => { await h.router.settled(); return (await reads()).balance === 14_000 || undefined; }, 20_000).then(() => true, () => false), `then mined (chain/tx ${await txStatuses(pay2Txid)}): unspent again, the tally 14000 — no terminal void`);
+  v = await reads();
+  check(v.outputs.some((x) => x.outpoint === `${pay2Txid}.0`), `back on /outputs (${v.list})`);
+
+  // ------------------------------------------------ 0.1.1: input-rejected → void → revived → unspent again
+  const parent = new Transaction();
+  parent.addInput({ sourceTransaction: pay2, sourceOutputIndex: 1, unlockingScriptTemplate: new P2PKH().unlock(alice), sequence: 0xffffffff });
+  parent.addOutput({ lockingScript: new P2PKH().lock(alice.toPublicKey().toHash()), satoshis: 4_800 });
+  await parent.sign();
+  const parentTxid = parent.id("hex");
+  const kid = new Transaction();
+  kid.addInput({ sourceTransaction: parent, sourceOutputIndex: 0, unlockingScriptTemplate: new P2PKH().unlock(alice), sequence: 0xffffffff });
+  kid.addOutput({ lockingScript: new P2PKH().lock(alice.toPublicKey().toHash()), satoshis: 4_600 });
+  await kid.sign();
+  const kidTxid = kid.id("hex");
+  await ingest(kid);
+  r = await call("file", fileArg(kidTxid, 0), "bsv");
+  check(r.ok && r.ans.state === "unspent" && (await reads()).balance === 18_600, `the child's output filed: unspent, the tally 18600 (${JSON.stringify(r.ans)}; parent ${await txStatuses(parentTxid)}, child ${await txStatuses(kidTxid)})`);
+  arcade.emit(parentTxid, { txStatus: "REJECTED" });
+  check(await until("child void", async () => { await h.router.settled(); return (await reads()).balance === 14_000 || undefined; }, 20_000).then(() => true, () => false), `the parent rejected: the child ${await txStatuses(kidTxid)} → void, the tally 14000`);
+  const kf = (await facts(`chain/tx/${kidTxid}`)).at(-1);
+  check(kf?.status === "rejected" && kf.reason === "input-rejected", `the child's fact: rejected, input-rejected (${JSON.stringify(kf)})`);
+  const h3 = mine(sha256d(h2), internal(parentTxid), 1_790_201_200);
+  await h.router.chainHeaders("w", "chain", [h3]);
+  await h.router.settled();
+  arcade.emit(parentTxid, { txStatus: "MINED", blockHash: display(sha256d(h3)), blockHeight: 3, merklePath: new MerklePath(3, [[{ offset: 0, hash: parentTxid, txid: true }]]).toHex() });
+  check(await until("child revived", async () => { await h.router.settled(); return (await reads()).balance === 18_600 || undefined; }, 20_000).then(() => true, () => false), `the parent mined: the child revived (${await txStatuses(kidTxid)}) → unspent again, the tally 18600`);
+  v = await reads();
+  check(v.outputs.some((x) => x.outpoint === `${kidTxid}.0`), `the child's output back on /outputs (${v.list})`);
   const book = await bookState(payTxid, 0);
   check(book?.kind === "wallet-book", `the head ${APP}/book is the book (${String(book?.kind)})`);
 } catch (e) {

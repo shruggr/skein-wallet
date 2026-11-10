@@ -267,3 +267,72 @@ test "the basket is the call input's `as` (sk.asName); a call without it has non
     const plain: sk.Value = .{ .map = &.{ .{ .key = "kind", .value = .{ .string = "call" } }, .{ .key = "fn", .value = .{ .string = "file" } } } };
     try testing.expect(main.basketOf(plain) == null);
 }
+
+/// A `chain/tx` fact with a reason (and `by`), as skein-chain 0.11.0 raises a rejection.
+fn rejectedFact(f: *Fake, txid: [32]u8, reason: []const u8, by: ?[32]u8) !void {
+    const n = try book.txName(f.a, "chain", txid);
+    var es: std.ArrayList(cbor.Entry) = .empty;
+    try es.append(f.a, .{ .key = "status", .value = .{ .text = "rejected" } });
+    try es.append(f.a, .{ .key = "reason", .value = .{ .text = reason } });
+    if (by) |b| try es.append(f.a, .{ .key = "by", .value = .{ .text = try f.a.dupe(u8, &c.header.toHex(b)) } });
+    try f.latest.put(f.a, n, .{ .map = es.items });
+}
+
+test "no terminal void: rejected → void → mined → unspent again, the tally back (a later chain/tx fact re-read on its wake)" {
+    var s: Setup = undefined;
+    s.init();
+    defer s.deinit();
+    var b = try s.book_(null);
+    const env = s.fake.env();
+    try s.fake.hold(tx(1), &.{ 400, 600 });
+    _ = try b.file(env, "bsv", tx(1), 0, d);
+    _ = try b.file(env, "bsv", tx(1), 1, d);
+    // output 1 spent before the rejection
+    try s.fake.outFact(tx(1), 1, "spent", tx(9));
+    _ = try b.refresh(env, tx(1), 1);
+    try testing.expectEqual(@as(u64, 400), try b.balance("bsv"));
+    // a wrong rejection: both void, out of the tally
+    try rejectedFact(&s.fake, tx(1), "REJECTED", null);
+    try testing.expectEqual(@as(usize, 2), try b.refreshTx(env, tx(1)));
+    try testing.expectEqual(book.State.void, try stateOf(&b, tx(1), 0));
+    try testing.expectEqual(book.State.void, try stateOf(&b, tx(1), 1));
+    try testing.expectEqual(@as(u64, 0), try b.balance("bsv"));
+    try testing.expectEqual(@as(usize, 0), (try b.list("bsv", null, 10)).records.len);
+    // later mined (a proof overrides the rejection): output 0 unspent, output 1 spent again, the tally back
+    try s.fake.txFact(tx(1), "mined");
+    const root = try b.save();
+    var b2 = try s.book_(root); // the wake is a later step: the book loaded from its head
+    try testing.expectEqual(@as(usize, 2), try b2.refreshTx(env, tx(1)));
+    try testing.expectEqual(book.State.unspent, try stateOf(&b2, tx(1), 0));
+    try testing.expectEqual(book.State.spent, try stateOf(&b2, tx(1), 1));
+    try testing.expectEqual(@as(u64, 400), try b2.balance("bsv"));
+    try testing.expectEqual(@as(usize, 1), (try b2.list("bsv", null, 10)).records.len);
+}
+
+test "no terminal void: input-rejected → void → revived (pending) → unspent again, the tally back" {
+    var s: Setup = undefined;
+    s.init();
+    defer s.deinit();
+    var b = try s.book_(null);
+    const env = s.fake.env();
+    try s.fake.hold(tx(2), &.{250});
+    try s.fake.txFact(tx(2), "pending");
+    _ = try b.file(env, "bsv", tx(2), 0, d);
+    try testing.expectEqual(@as(u64, 250), try b.balance("bsv"));
+    // its parent rejected: the chain app's parents step raises input-rejected for it
+    try rejectedFact(&s.fake, tx(2), "input-rejected", tx(7));
+    try testing.expect(try b.refresh(env, tx(2), 0));
+    try testing.expectEqual(book.State.void, try stateOf(&b, tx(2), 0));
+    try testing.expectEqual(@as(u64, 0), try b.balance("bsv"));
+    // the parent's rejection no longer holds: revived, pending again
+    try s.fake.txFact(tx(2), "pending");
+    const root = try b.save();
+    var b2 = try s.book_(root);
+    try testing.expectEqual(@as(usize, 1), try b2.refreshTx(env, tx(2)));
+    try testing.expectEqual(book.State.unspent, try stateOf(&b2, tx(2), 0));
+    try testing.expectEqual(@as(u64, 250), try b2.balance("bsv"));
+    // and seen again after a reorg keeps it unspent
+    try s.fake.txFact(tx(2), "seen");
+    try testing.expect(!try b2.refresh(env, tx(2), 0));
+    try testing.expectEqual(@as(u64, 250), try b2.balance("bsv"));
+}

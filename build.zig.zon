@@ -1,12 +1,12 @@
 .{
     .name = .skein_wallet,
-    .version = "0.1.0",
+    .version = "0.1.1",
     .minimum_zig_version = "0.16.0",
     .fingerprint = 0x41ac64b7a4925008,
     .dependencies = .{
         .skein_sdk = .{
-            .url = "https://github.com/shruggr/skein-sdk/archive/39e3602714111970b15b3dad989470efafa88b6d.tar.gz",
-            .hash = "skein_sdk-0.20.0-YroFBBrQGwDDLJ5cV-m0BoSWLI-cb03zGp64rkqNmCk9",
+            .url = "https://github.com/shruggr/skein-sdk/archive/refs/tags/v0.21.0.tar.gz",
+            .hash = "skein_sdk-0.21.0-YroFBOksHQDdS0GOaAtHHh58xBWEF6XW6yODsrxw-cHs",
         },
     },
     .paths = .{
